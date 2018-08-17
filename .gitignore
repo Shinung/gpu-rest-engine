@@ -1,3 +1,4 @@
 TensorRT*
-models/
 tensorrt_ssd/.vscode/
+
+*.caffemodel
