@@ -1,2 +1,3 @@
 TensorRT*
 models/
+tensorrt_ssd/.vscode/

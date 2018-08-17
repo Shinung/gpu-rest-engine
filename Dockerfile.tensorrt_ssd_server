@@ -1,0 +1,78 @@
+FROM nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04
+
+ENV CUDA_ARCH_BIN "35 52 60 61 70"
+ENV CUDA_ARCH_PTX "70"
+
+MAINTAINER Felix Abecassis "fabecassis@nvidia.com"
+
+# Install dependencies.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        git \
+        libboost-all-dev \
+        libatlas-base-dev \
+        libatlas-dev \
+        libgflags-dev \
+        libgoogle-glog-dev \
+        libprotobuf-dev \
+        pkg-config \
+        protobuf-compiler \
+        python-yaml \
+        wget && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN wget https://cmake.org/files/v3.11/cmake-3.11.4.tar.gz && \
+    tar xzvf cmake-3.11.4.tar.gz && cd cmake-3.11.4 && \
+    ./bootstrap && make && make install
+
+# OpenCV 3.3.1 is needed to support custom allocators for GpuMat objects.
+RUN git clone --depth 1 -b 3.3.1 https://github.com/opencv/opencv.git /opencv && \
+    mkdir /opencv/build && cd /opencv/build && \
+    cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON \
+          -DWITH_CUDA=ON -DWITH_CUFFT=OFF -DCUDA_ARCH_BIN="${CUDA_ARCH_BIN}" -DCUDA_ARCH_PTX="${CUDA_ARCH_PTX}" \
+          -DWITH_JPEG=ON -DBUILD_JPEG=ON -DWITH_PNG=ON -DBUILD_PNG=ON \
+          -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DWITH_FFMPEG=OFF -DWITH_GTK=OFF \
+          -DWITH_OPENCL=OFF -DWITH_QT=OFF -DWITH_V4L=OFF -DWITH_JASPER=OFF \
+          -DWITH_1394=OFF -DWITH_TIFF=OFF -DWITH_OPENEXR=OFF -DWITH_IPP=OFF -DWITH_WEBP=OFF \
+          -DBUILD_opencv_superres=OFF -DBUILD_opencv_java=OFF -DBUILD_opencv_python2=OFF \
+          -DBUILD_opencv_videostab=OFF -DBUILD_opencv_apps=OFF -DBUILD_opencv_flann=OFF \
+          -DBUILD_opencv_ml=OFF -DBUILD_opencv_photo=OFF -DBUILD_opencv_shape=OFF \
+          -DBUILD_opencv_cudabgsegm=OFF -DBUILD_opencv_cudaoptflow=OFF -DBUILD_opencv_cudalegacy=OFF \
+          -DCUDA_NVCC_FLAGS="-O3" -DCUDA_FAST_MATH=ON .. && \
+    make -j"$(nproc)" install && \
+    ldconfig && \
+    rm -rf /opencv
+
+# Install golang
+ENV GOLANG_VERSION 1.9.2
+RUN wget -nv -O - https://storage.googleapis.com/golang/go${GOLANG_VERSION}.linux-amd64.tar.gz \
+    | tar -C /usr/local -xz
+ENV GOPATH /go
+ENV PATH $GOPATH/bin:/usr/local/go/bin:$PATH
+
+# Require the TensorRT archive to be present in the build context.
+ADD TensorRT-4.0.0.3.Ubuntu-16.04.4.x86_64-gnu.cuda-9.0.cudnn7.0.tar.gz /opt/
+
+ENV CPLUS_INCLUDE_PATH /opt/TensorRT-4.0.0.3/include:$CPLUS_INCLUDE_PATH
+ENV LD_LIBRARY_PATH /opt/TensorRT-4.0.0.3/targets/x86_64-linux-gnu/lib:$LD_LIBRARY_PATH
+ENV LIBRARY_PATH /opt/TensorRT-4.0.0.3/targets/x86_64-linux-gnu/lib:$LIBRARY_PATH
+
+# Copy and build GPU Rest Engine with TensorRT
+COPY tensorrt_ssd /go/src/tensorrt-engine
+COPY common.h /go/src/common.h
+
+RUN mkdir /go/src/tensorrt-engine/build && cd /go/src/tensorrt-engine/build && \
+    cmake .. && \
+    make -j"$(nproc)"
+
+ENV LD_LIBRARY_PATH /go/src/tensorrt-engine/build:$LD_LIBRARY_PATH
+
+RUN mkdir /go/src/tensorrt-server
+Run cp /go/src/tensorrt-engine/include/detection.h /go/src/tensorrt-engine/main.go /go/src/tensorrt-server
+
+RUN go get -ldflags="-s -w" tensorrt-server
+
+COPY models/VGGNet/VOC0712/SSD_300x300 /go/bin
+
+WORKDIR /go/bin
+CMD ["tensorrt-server", "ssd_deploy_iplugin.prototxt", "VGG_VOC0712_SSD_300x300_iter_120000.caffemodel", "labelmap_voc.prototxt"]

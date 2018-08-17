@@ -1,0 +1,7 @@
+ERROR: conv4_3_norm_mbox_conf: kernel weights has count 129024 but 387072 was expected
+ERROR: fc7_mbox_conf: kernel weights has count 387072 but 1161216 was expected
+ERROR: conv6_2_mbox_conf: kernel weights has count 193536 but 580608 was expected
+ERROR: conv7_2_mbox_conf: kernel weights has count 96768 but 290304 was expected
+ERROR: conv8_2_mbox_conf: kernel weights has count 64512 but 193536 was expected
+ERROR: conv9_2_mbox_conf: kernel weights has count 64512 but 193536 was expected
+lprDebug: /home/qisens/forQiSens/qisensmldl/lprGRE/tensorrt_from_caffe/forDebug/InferenceEngine.cpp:58: InferenceEngine::InferenceEngine(const string&, const string&): Assertion `engine_' failed.
